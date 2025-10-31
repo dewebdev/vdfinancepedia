@@ -1283,7 +1283,18 @@
     -->
     <!-- Cashfree SDK -->
 
+    <!-- Keep your full HTML above unchanged -->
+    <!-- Replace only the <script type="module"> block with this final version -->
+
     <script type="module">
+      import {initializeApp} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+      import {
+        getFirestore,
+        doc,
+        setDoc,
+        serverTimestamp,
+      } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
       // --- Firebase Config ---
       const firebaseConfig = {
         apiKey: "AIzaSyB0A0Dr9DUc4JLikQqF-wv7QIQ024p_uJ4",
@@ -1294,20 +1305,27 @@
         appId: "1:500770118359:web:2ae9c4afa517f34dfcee92",
       };
 
-      import {initializeApp} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-      import {
-        getFirestore,
-        doc,
-        setDoc,
-        serverTimestamp,
-      } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
-
+      // --- Initialize Firebase ---
       let db;
       try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
       } catch (e) {
-        console.error("Firebase initialization error:", e);
+        console.error("Firebase init error:", e);
+      }
+
+      // --- Prefill Data from Thankyou Page (if retry) ---
+      const prefill = sessionStorage.getItem("prefill");
+      if (prefill) {
+        try {
+          const {name, email, whatsapp} = JSON.parse(prefill);
+          document.getElementById("name").value = name || "";
+          document.getElementById("email").value = email || "";
+          document.getElementById("whatsapp").value = whatsapp || "";
+          sessionStorage.removeItem("prefill");
+        } catch (e) {
+          console.warn("Prefill parse error:", e);
+        }
       }
 
       // --- Modal Logic ---
@@ -1325,31 +1343,27 @@
         });
 
         closeBtn.onclick = () => {
-          modal.classList.remove("flex");
           modal.classList.add("hidden");
         };
 
         window.onclick = (ev) => {
-          if (ev.target == modal) {
-            modal.classList.remove("flex");
+          if (ev.target === modal) {
             modal.classList.add("hidden");
           }
         };
       }
 
-      // --- Form Submission Logic ---
+      // --- Form Submission & Cashfree Logic ---
       const form = document.getElementById("registration-form");
       const payButton = document.getElementById("pay-button");
       const formError = document.getElementById("form-error");
 
-      if (form && payButton && formError && db) {
+      if (form && payButton && db) {
         form.addEventListener("submit", async (e) => {
           e.preventDefault();
-
           payButton.disabled = true;
-          payButton.textContent = "Processing Payment...";
+          payButton.textContent = "Processing...";
           formError.classList.add("hidden");
-          formError.textContent = "";
 
           const name = document.getElementById("name").value.trim();
           const email = document.getElementById("email").value.trim();
@@ -1358,6 +1372,12 @@
             .value.trim()
             .replace(/\D/g, "");
 
+          // Save to localStorage for retry prefill
+          localStorage.setItem(
+            "registrationData",
+            JSON.stringify({name, email, whatsapp})
+          );
+
           const regId = `reg_${Date.now()}`;
 
           try {
@@ -1365,7 +1385,7 @@
               name,
               email,
               whatsapp,
-              status: "pending",
+              status: "initiated",
               createdAt: serverTimestamp(),
             });
 
@@ -1383,46 +1403,37 @@
             });
 
             const data = await resp.json();
-            if (!resp.ok) {
-              throw new Error(data.message || "Failed to create order");
-            }
+            if (!resp.ok)
+              throw new Error(data.message || "Order creation failed");
 
-            // ✅ Wait until Cashfree SDK is loaded before using it
-            if (data.cfData && data.cfData.payment_session_id) {
-              await new Promise((resolve) => {
-                const check = () => {
-                  if (typeof Cashfree !== "undefined") resolve();
-                  else setTimeout(check, 100);
-                };
-                check();
+            // Wait for Cashfree SDK
+            await new Promise((resolve) => {
+              const check = () => {
+                if (typeof Cashfree !== "undefined") resolve();
+                else setTimeout(check, 100);
+              };
+              check();
+            });
+
+            // 🧭 Change "sandbox" → "production" on go-live
+            const cashfree = Cashfree({mode: "sandbox"});
+
+            if (data.cfData?.payment_session_id) {
+              await cashfree.checkout({
+                paymentSessionId: data.cfData.payment_session_id,
+                redirectTarget: "_self",
               });
-
-              // Now safe to use Cashfree
-              const cashfree = Cashfree({mode: "sandbox"}); // change to "production" later
-              cashfree
-                .checkout({
-                  paymentSessionId: data.cfData.payment_session_id,
-                  redirectTarget: "_self",
-                })
-                .then((res) => console.log("Cashfree checkout launched:", res))
-                .catch((err) => {
-                  console.error("Cashfree error:", err);
-                  throw new Error("Unable to start payment. Please try again.");
-                });
             } else {
-              throw new Error("Payment session ID missing. Please try again.");
+              throw new Error("Payment session not received. Please retry.");
             }
           } catch (err) {
-            console.error(err);
-            formError.textContent = err.message || "An unknown error occurred.";
+            console.error("Error:", err);
+            formError.textContent = err.message || "Something went wrong.";
             formError.classList.remove("hidden");
-
             payButton.disabled = false;
             payButton.textContent = "RESERVE MY SEAT (Pay ₹99)";
           }
         });
-      } else {
-        console.error("Firebase or form elements not initialized properly.");
       }
     </script>
   </body>

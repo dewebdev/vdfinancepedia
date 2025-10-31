@@ -1,32 +1,146 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Payment Successful</title>
+    <title>Payment Status | Vinith D'costa & Associates</title>
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
+
   <body class="bg-[#050505] text-white">
-    <div class="min-h-screen flex items-center justify-center">
-      <div class="max-w-xl text-center bg-[#0f0f0f] border p-10 rounded-xl">
-        <h1 class="text-3xl font-bold mb-4">Payment Successful 🎉</h1>
-        <p class="mb-4">
-          Thank you — your payment has been received. We'll send the webinar
-          access link to your email shortly.
+    <div class="min-h-screen flex items-center justify-center px-4">
+      <div
+        id="statusCard"
+        class="max-w-xl text-center bg-[#0f0f0f] border p-10 rounded-xl shadow-lg transition-all duration-500"
+      >
+        <h1 id="statusTitle" class="text-3xl font-bold mb-4">
+          Checking Payment Status...
+        </h1>
+        <p id="statusMessage" class="mb-4 text-gray-300">
+          Please wait while we verify your transaction.
         </p>
-        <p class="mb-6">
-          If you don't receive the email within 10 minutes, check spam or
-          contact
-          <a href="mailto:no-reply@vinithdcosta.in" class="text-yellow-400"
-            >contact@vinithdcosta.in</a
-          >.
-        </p>
-        <a
-          href="/"
-          class="inline-block bg-gradient-to-r from-[#D4AF37] to-[#E0C160] text-[#050505] font-bold rounded-lg px-6 py-3"
-          >Return to site</a
-        >
+
+        <div class="flex justify-center gap-4 mt-6">
+          <a
+            id="homeLink"
+            href="/"
+            class="hidden bg-gradient-to-r from-[#D4AF37] to-[#E0C160] text-[#050505] font-bold rounded-lg px-6 py-3 transition hover:opacity-90"
+          >
+            Return to Site
+          </a>
+
+          <a
+            id="retryLink"
+            href="/"
+            onclick="if(localStorage.getItem('registrationData')) sessionStorage.setItem('prefill', localStorage.getItem('registrationData'))"
+            class="hidden bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg px-6 py-3"
+          >
+            Try Again
+          </a>
+        </div>
       </div>
     </div>
+
+    <script>
+      // --- Extract query params ---
+      const params = new URLSearchParams(window.location.search);
+      const orderId = params.get("order_id");
+      const status = (params.get("status") || "").toUpperCase();
+
+      const title = document.getElementById("statusTitle");
+      const message = document.getElementById("statusMessage");
+      const card = document.getElementById("statusCard");
+      const homeLink = document.getElementById("homeLink");
+      const retryLink = document.getElementById("retryLink");
+
+      // --- Step 1: Show immediate result from redirect URL ---
+      if (["SUCCESS", "PAID", "ORDER_PAID"].includes(status)) {
+        title.textContent = "Payment Successful 🎉";
+        message.innerHTML = `
+          Thank you — your payment has been received.<br>
+          We'll send the webinar access link & WhatsApp group invite to your email shortly.<br><br>
+          Order ID: <span class="text-yellow-400">${orderId}</span>
+        `;
+        card.classList.add("border-green-500");
+        homeLink.classList.remove("hidden");
+      } else if (
+        [
+          "FAILED",
+          "CANCELLED",
+          "USER_DROPPED",
+          "NOT_PAID",
+          "ACTIVE",
+          "TIMEOUT",
+        ].includes(status)
+      ) {
+        title.textContent = "Payment Failed ❌";
+        message.innerHTML = `
+          Unfortunately, your payment was not successful.<br>
+          You can try again below.<br><br>
+          Order ID: <span class="text-yellow-400">${orderId}</span>
+        `;
+        card.classList.add("border-red-500");
+        retryLink.classList.remove("hidden");
+      } else {
+        title.textContent = "Payment Pending ⏳";
+        message.innerHTML = `
+          We're verifying your payment for Order ID
+          <span class="text-yellow-400">${orderId}</span>.<br><br>
+          Please check your email for confirmation shortly.
+        `;
+        card.classList.add("border-yellow-500");
+        homeLink.classList.remove("hidden");
+      }
+
+      // --- Step 2: 🔍 Live verification with Cashfree API ---
+      if (orderId) {
+        fetch(`/api/checkStatus/${orderId}`)
+          .then((res) => res.json())
+          .then((data) => {
+            const liveStatus = (data.status || "").toUpperCase();
+            console.log("✅ Live status:", liveStatus);
+
+            if (["PAID", "SUCCESS", "ORDER_PAID"].includes(liveStatus)) {
+              title.textContent = "Payment Successful 🎉";
+              message.innerHTML = `
+                Thank you — your payment has been verified successfully.<br>
+                Webinar access and WhatsApp group link have been emailed to you.<br><br>
+                Order ID: <span class="text-yellow-400">${orderId}</span>
+              `;
+              card.classList.remove("border-yellow-500", "border-red-500");
+              card.classList.add("border-green-500");
+              homeLink.classList.remove("hidden");
+              retryLink.classList.add("hidden");
+            } else if (
+              ["FAILED", "CANCELLED", "USER_DROPPED"].includes(liveStatus)
+            ) {
+              title.textContent = "Payment Failed ❌";
+              message.innerHTML = `
+                Unfortunately, your payment did not complete.<br>
+                You can try again below.<br><br>
+                Order ID: <span class="text-yellow-400">${orderId}</span>
+              `;
+              card.classList.remove("border-yellow-500", "border-green-500");
+              card.classList.add("border-red-500");
+              retryLink.classList.remove("hidden");
+            } else {
+              // Pending or unknown status
+              title.textContent = "Payment Pending ⏳";
+              message.innerHTML = `
+                We're still verifying your payment for Order ID
+                <span class="text-yellow-400">${orderId}</span>.<br><br>
+                Please check your email for confirmation shortly.
+              `;
+              card.classList.remove("border-green-500", "border-red-500");
+              card.classList.add("border-yellow-500");
+              homeLink.classList.remove("hidden");
+            }
+          })
+          .catch((err) => {
+            console.error("❌ Live status check failed:", err);
+            // Keep showing whatever the redirect showed
+          });
+      }
+    </script>
   </body>
 </html>

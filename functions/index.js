@@ -14,8 +14,6 @@ const app = express();
 app.use(bodyParser.json());
 
 // --- SECURE CONFIGURATION ---
-// These are now read from the secure environment you set with the terminal command.
-// They are no longer hard-coded and are safe for GitHub.
 const CF_APP_ID = functions.config().cashfree?.app_id;
 const CF_KEY_SECRET = functions.config().cashfree?.key_secret;
 const CF_ENV = (
@@ -25,18 +23,17 @@ const SMTP_HOST = functions.config().smtp?.host;
 const SMTP_PORT = functions.config().smtp?.port || 465;
 const SMTP_USER = functions.config().smtp?.user;
 const SMTP_PASS = functions.config().smtp?.pass;
-const WHATSAPP_TOKEN = functions.config().whatsapp?.meta_token;
-const WHATSAPP_PHONE_ID = functions.config().whatsapp?.phone_number_id;
 const WEBINAR_LINK = functions.config().webinar?.link;
+const WHATSAPP_GROUP_LINK = functions.config().webinar?.whatsapp_group; // ✅ NEW FIELD
 const YOUR_WEBSITE_URL = functions.config().project?.url;
-// --- END OF CONFIG ---
+// --- END CONFIG ---
 
 const CASHFREE_BASE =
   CF_ENV === "PROD"
     ? "https://api.cashfree.com/pg"
     : "https://sandbox.cashfree.com/pg";
 
-// Transporter is now initialized inside a helper to avoid crashing if config is missing
+// Initialize email transporter
 let transporter;
 function getTransporter() {
   if (!transporter && SMTP_HOST && SMTP_USER && SMTP_PASS) {
@@ -50,12 +47,10 @@ function getTransporter() {
   return transporter;
 }
 
+// --- CREATE ORDER ---
 app.post("/api/createOrder", async (req, res) => {
-  // Check that secrets are set
   if (!CF_APP_ID || !CF_KEY_SECRET || !YOUR_WEBSITE_URL) {
-    console.error(
-      "CRITICAL: Missing config. Run 'firebase functions:config:set ...'"
-    );
+    console.error("❌ Missing config. Run 'firebase functions:config:set ...'");
     return res.status(500).json({
       message: "Server configuration error. Please contact support.",
     });
@@ -80,21 +75,19 @@ app.post("/api/createOrder", async (req, res) => {
         customer_id: registrationId || email.replace(/[^a-zA-Z0-9_-]/g, "_"),
         customer_name: name,
         customer_email: email,
-        customer_phone: whatsapp ? `+91${whatsapp.replace(/\\D/g, "")}` : "",
+        customer_phone: whatsapp ? `+91${whatsapp.replace(/\D/g, "")}` : "",
       },
       order_meta: {
-        return_url: `${YOUR_WEBSITE_URL}/thankyou.html?order_id={order_id}`,
+        return_url: `${YOUR_WEBSITE_URL}/thankyou.html?order_id={order_id}&status={order_status}`,
+        notify_url: `https://us-central1-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/api/webhook`,
       },
     };
 
-    const url = `${CASHFREE_BASE}/orders`;
-
-    // [THIS IS THE FIX for the 'Unexpected token' error]
     const headers = {
       "Content-Type": "application/json",
       "x-client-id": CF_APP_ID,
       "x-client-secret": CF_KEY_SECRET,
-      "x-api-version": "2022-09-01", // This line was missing
+      "x-api-version": "2022-09-01",
     };
 
     console.log("DEBUG Cashfree Headers:", {
@@ -106,6 +99,7 @@ app.post("/api/createOrder", async (req, res) => {
       CASHFREE_BASE,
     });
 
+    const url = `${CASHFREE_BASE}/orders`;
     const cfResp = await axios.post(url, orderPayload, {headers});
     const cfData = cfResp.data || {};
 
@@ -126,7 +120,6 @@ app.post("/api/createOrder", async (req, res) => {
     );
 
     const payment_link = cfData?.payment_link || cfData?.payments?.url || null;
-
     return res.status(200).json({payment_link, cfData});
   } catch (err) {
     console.error(
@@ -140,8 +133,69 @@ app.post("/api/createOrder", async (req, res) => {
   }
 });
 
+// --- CHECK ORDER STATUS (for thankyou.html) ---
+app.get("/api/checkStatus/:orderId", async (req, res) => {
+  try {
+    const {orderId} = req.params;
+    const url = `${CASHFREE_BASE}/orders/${orderId}`;
+    const headers = {
+      "Content-Type": "application/json",
+      "x-client-id": CF_APP_ID,
+      "x-client-secret": CF_KEY_SECRET,
+      "x-api-version": "2022-09-01",
+    };
+
+    const cfResp = await axios.get(url, {headers});
+    const cfData = cfResp.data;
+
+    const q = await db
+      .collection("registrations")
+      .where("orderPayload.order_id", "==", orderId)
+      .get();
+    if (!q.empty) {
+      q.forEach(async (docSnap) => {
+        await docSnap.ref.update({
+          status: cfData.order_status,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // ✅ Trigger email directly when payment confirmed
+        const s = String(cfData.order_status || "").toLowerCase();
+        const docData = (await docSnap.ref.get()).data();
+
+        if (["paid", "success", "order_paid"].includes(s)) {
+          await sendConfirmationEmail(docData);
+        } else if (
+          [
+            "failed",
+            "cancelled",
+            "user_dropped",
+            "not_paid",
+            "active",
+            "timeout",
+          ].includes(s)
+        ) {
+          await sendFailedEmail(docData);
+        }
+      });
+    }
+
+    return res.status(200).json({
+      orderId,
+      status: cfData.order_status,
+      cfData,
+    });
+  } catch (err) {
+    console.error("checkStatus error", err?.response?.data || err.message);
+    return res.status(500).json({
+      message: "Unable to fetch status",
+      detail: err?.response?.data || err.message,
+    });
+  }
+});
+
+// --- WEBHOOK (for Cashfree status updates) ---
 app.post("/webhook", bodyParser.raw({type: "*/*"}), async (req, res) => {
-  // Check for secret, but use a default if not set to avoid webhook failure
   const webhookSecret = CF_KEY_SECRET || "DEFAULT_SECRET";
 
   try {
@@ -157,8 +211,6 @@ app.post("/webhook", bodyParser.raw({type: "*/*"}), async (req, res) => {
     const hmac = crypto.createHmac("sha256", webhookSecret);
     hmac.update(bodyStr);
     const expected = hmac.digest("hex");
-
-    // Only fail if keys are set and signature is invalid
     if (CF_KEY_SECRET && expected !== signatureHeader) {
       return res.status(403).send("Invalid signature");
     }
@@ -188,7 +240,6 @@ app.post("/webhook", bodyParser.raw({type: "*/*"}), async (req, res) => {
 
           if (s === "paid" || s === "success" || s === "order_paid") {
             await sendConfirmationEmail(docData);
-            await sendWhatsApp(docData);
           } else if (
             s === "failed" ||
             s === "cancelled" ||
@@ -207,7 +258,7 @@ app.post("/webhook", bodyParser.raw({type: "*/*"}), async (req, res) => {
   }
 });
 
-// --- SUCCESS EMAIL ---
+// --- EMAILS ---
 async function sendConfirmationEmail(docData) {
   const mailer = getTransporter();
   if (!docData?.email || !mailer) {
@@ -217,28 +268,32 @@ async function sendConfirmationEmail(docData) {
     return;
   }
 
-  if (!WEBINAR_LINK) {
-    console.error("CRITICAL: WEBINAR_LINK not set. Cannot send email.");
+  if (!WEBINAR_LINK || !WHATSAPP_GROUP_LINK) {
+    console.error("CRITICAL: WEBINAR_LINK or WHATSAPP_GROUP_LINK not set.");
     return;
   }
 
   const mailOptions = {
     from: `"Vinith Dcosta & Associates" <${SMTP_USER}>`,
     to: docData.email,
-    subject: "Your Webinar Access — Registration Confirmed",
-    html: `<p>Hi ${
-      docData.name || ""
-    },</p><p>Thanks for registering. Your payment is confirmed.</p><p>Join the webinar here: <a href="${WEBINAR_LINK}">${WEBINAR_LINK}</a></p><p>— Vinith Dcosta & Associates</p>`,
+    subject: "✅ Webinar Registration Confirmed",
+    html: `<p>Hi ${docData.name || ""},</p>
+           <p>Thank you for registering! Your payment has been successfully received.</p>
+           <p><strong>🎥 Webinar Access Link:</strong><br>
+           <a href="${WEBINAR_LINK}">${WEBINAR_LINK}</a></p>
+           <p><strong>💬 Join our official WhatsApp group for updates:</strong><br>
+           <a href="${WHATSAPP_GROUP_LINK}">${WHATSAPP_GROUP_LINK}</a></p>
+           <p>We look forward to seeing you there!</p>
+           <p>— Team Vinith Dcosta & Associates</p>`,
   };
   try {
     await mailer.sendMail(mailOptions);
-    console.log("Email sent to", docData.email);
+    console.log("✅ Success email sent to", docData.email);
   } catch (e) {
     console.error("Email send failed", e);
   }
 }
 
-// --- FAILED EMAIL ---
 async function sendFailedEmail(docData) {
   const mailer = getTransporter();
   if (!docData?.email || !mailer) {
@@ -246,63 +301,21 @@ async function sendFailedEmail(docData) {
     return;
   }
 
-  if (!YOUR_WEBSITE_URL) {
-    console.error("CRITICAL: project.url not set. Cannot send failed email.");
-    return;
-  }
-
   const mailOptions = {
     from: `"Vinith Dcosta & Associates" <${SMTP_USER}>`,
     to: docData.email,
-    subject: "There was an issue with your webinar payment",
+    subject: "❌ Webinar Payment Failed",
     html: `<p>Hi ${docData.name || ""},</p>
-           <p>We noticed you tried to register for the trading webinar, but the payment didn't complete successfully.</p>
-           <p>If you'd still like to join, you can try registering again at any time right here:</p>
-           <p><a href="${YOUR_WEBSITE_URL}">${YOUR_WEBSITE_URL}</a></p>
-           <p>If you had trouble, please let us know. We're here to help.</p>
-           <p>— Vinith Dcosta & Associates</p>`,
+           <p>Unfortunately, your webinar payment did not complete successfully.</p>
+           <p>Please try again here: <a href="${YOUR_WEBSITE_URL}">${YOUR_WEBSITE_URL}</a></p>
+           <p>If you need help, contact us anytime.</p>
+           <p>— Team Vinith Dcosta & Associates</p>`,
   };
   try {
     await mailer.sendMail(mailOptions);
-    console.log("Failed payment email sent to", docData.email);
+    console.log("⚠️ Failed payment email sent to", docData.email);
   } catch (e) {
     console.error("Failed email send failed", e);
-  }
-}
-
-// --- WHATSAPP (Only sends on SUCCESS) ---
-async function sendWhatsApp(docData) {
-  if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_ID || !docData?.whatsapp) {
-    console.log("WhatsApp not configured or number missing - skipping");
-    return;
-  }
-
-  if (!WEBINAR_LINK) {
-    console.error("CRITICAL: WEBINAR_LINK not set. Cannot send WhatsApp.");
-    return;
-  }
-
-  try {
-    const url = `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`;
-    const cleanWhatsapp = docData.whatsapp.replace(/\D/g, "");
-    const body = {
-      messaging_product: "whatsapp",
-      to: `+91${cleanWhatsapp}`,
-      type: "text",
-      text: {
-        body: `Hi ${
-          docData.name || ""
-        }! Your webinar registration is confirmed. Join: ${WEBINAR_LINK}`,
-      },
-    };
-    const headers = {
-      Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-      "Content-Type": "application/json",
-    };
-    const resp = await axios.post(url, body, {headers});
-    console.log("WhatsApp sent", resp.data);
-  } catch (e) {
-    console.error("WhatsApp send failed", e?.response?.data || e.message || e);
   }
 }
 
