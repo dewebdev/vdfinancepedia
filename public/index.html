@@ -11,16 +11,16 @@
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; 
-               script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://www.gstatic.com https://www.youtube.com; 
-               style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
-               font-src 'self' https://fonts.gstatic.com; 
-               connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com;
-               frame-src 'self' https://www.youtube.com;
-               frame-ancestors 'none';"
+             script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://www.gstatic.com https://www.youtube.com https://sdk.cashfree.com; 
+             style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
+             font-src 'self' https://fonts.gstatic.com; 
+             connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://sandbox.cashfree.com https://api.cashfree.com;
+             frame-src 'self' https://www.youtube.com https://sandbox.cashfree.com https://payments.cashfree.com;
+             frame-ancestors 'none';"
     />
 
     <title>The ₹99 Trading Webinar - Unlock Your Financial Future</title>
-
+    <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Google Font: Inter -->
@@ -554,9 +554,7 @@
               viewBox="0 0 24 24"
               fill="currentColor"
             >
-              <path
-                d="M6 17h3l2-4V7H5v6h3l-2 4zM14 17h3l2-4V7h-6v6h3l-2 4z"
-              />
+              <path d="M6 17h3l2-4V7H5v6h3l-2 4zM14 17h3l2-4V7h-6v6h3l-2 4z" />
             </svg>
             <p class="text-gray-300 mb-6">
               "I was a complete beginner. After this webinar, the charts finally
@@ -576,9 +574,7 @@
               viewBox="0 0 24 24"
               fill="currentColor"
             >
-              <path
-                d="M6 17h3l2-4V7H5v6h3l-2 4zM14 17h3l2-4V7h-6v6h3l-2 4z"
-              />
+              <path d="M6 17h3l2-4V7H5v6h3l-2 4zM14 17h3l2-4V7h-6v6h3l-2 4z" />
             </svg>
             <p class="text-gray-300 mb-6">
               "I'm a professional trader, and even I learned new perspectives on
@@ -599,9 +595,7 @@
               viewBox="0 0 24 24"
               fill="currentColor"
             >
-              <path
-                d="M6 17h3l2-4V7H5v6h3l-2 4zM14 17h3l2-4V7h-6v6h3l-2 4z"
-              />
+              <path d="M6 17h3l2-4V7H5v6h3l-2 4zM14 17h3l2-4V7h-6v6h3l-2 4z" />
             </svg>
             <p class="text-gray-300 mb-6">
               "No fluff. Just 100% actionable strategy. The way Vinith explains
@@ -1056,7 +1050,7 @@
           class="text-2xl font-bold gold-gradient-text mb-4 bg-gradient-to-r from-[#FFD700] via-[#D4AF37] to-[#FBF685] bg-clip-text text-transparent"
         >
           Vinith Dcosta & Associates
-        </Example>
+        </p>
         <p class="text-gray-400 text-sm">
           &copy; 2025 Vinith Dcosta & Associates. All Rights Reserved.
         </p>
@@ -1163,7 +1157,7 @@
               RESERVE MY SEAT (Pay ₹99)
             </button>
           </div>
-          
+
           <div
             id="form-error"
             class="hidden text-red-400 text-sm text-center pt-2"
@@ -1259,15 +1253,15 @@
         });
       };
       faqAccordion();
-      
+
       // --- YouTube Video Player ---
       function loadYouTubeVideo() {
         const videoContainer = document.getElementById("video-container");
         if (!videoContainer) return;
 
         // ⚠️ REPLACE THIS ID with your YouTube video ID
-        const videoId = "YOUR_YOUTUBE_VIDEO_ID_HERE"; 
-        
+        const videoId = "dQw4w9WgXcQ";
+
         videoContainer.innerHTML = `
           <iframe class="w-full h-full" 
                   src="https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1" 
@@ -1279,18 +1273,18 @@
 
       const playButton = document.getElementById("video-play-button");
       const thumbnail = document.getElementById("video-thumbnail");
-      
-      if(playButton) playButton.addEventListener("click", loadYouTubeVideo);
-      if(thumbnail) thumbnail.addEventListener("click", loadYouTubeVideo);
 
+      if (playButton) playButton.addEventListener("click", loadYouTubeVideo);
+      if (thumbnail) thumbnail.addEventListener("click", loadYouTubeVideo);
     </script>
 
     <!-- 
       --- FIREBASE & FORM LOGIC SCRIPT ---
     -->
+    <!-- Cashfree SDK -->
+
     <script type="module">
-      // --- THIS IS YOUR PUBLIC FIREBASE CONFIG ---
-      // This is correct. It's safe to be here.
+      // --- Firebase Config ---
       const firebaseConfig = {
         apiKey: "AIzaSyB0A0Dr9DUc4JLikQqF-wv7QIQ024p_uJ4",
         authDomain: "vdfinancepedia-a7676.firebaseapp.com",
@@ -1300,7 +1294,6 @@
         appId: "1:500770118359:web:2ae9c4afa517f34dfcee92",
       };
 
-      // Firebase Imports
       import {initializeApp} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
       import {
         getFirestore,
@@ -1309,35 +1302,33 @@
         serverTimestamp,
       } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
-      // Initialize Firebase
       let db;
       try {
-           const app = initializeApp(firebaseConfig);
-           db = getFirestore(app);
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
       } catch (e) {
-          console.error("Firebase initialization error:", e);
+        console.error("Firebase initialization error:", e);
       }
-     
-      // --- Modal open/close Logic ---
+
+      // --- Modal Logic ---
       const modal = document.getElementById("registration-modal");
       const openModalButtons = document.querySelectorAll(".open-modal-btn");
       const closeBtn = document.querySelector(".close-btn");
 
       if (modal && closeBtn) {
-        openModalButtons.forEach(
-          (btn) =>
-            (btn.onclick = (e) => {
-              e.preventDefault();
-              modal.classList.remove("hidden");
-              modal.classList.add("flex"); 
-            })
-        );
-        
+        openModalButtons.forEach((btn) => {
+          btn.onclick = (e) => {
+            e.preventDefault();
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+          };
+        });
+
         closeBtn.onclick = () => {
           modal.classList.remove("flex");
           modal.classList.add("hidden");
         };
-        
+
         window.onclick = (ev) => {
           if (ev.target == modal) {
             modal.classList.remove("flex");
@@ -1346,75 +1337,92 @@
         };
       }
 
-      // --- Form submission Logic ---
+      // --- Form Submission Logic ---
       const form = document.getElementById("registration-form");
       const payButton = document.getElementById("pay-button");
-      const formError = document.getElementById("form-error"); 
+      const formError = document.getElementById("form-error");
 
       if (form && payButton && formError && db) {
-          form.addEventListener("submit", async (e) => {
-            e.preventDefault();
-            
-            payButton.disabled = true;
-            payButton.textContent = "Processing...";
-            formError.classList.add("hidden");
-            formError.textContent = "";
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
 
-            const name = document.getElementById("name").value.trim();
-            const email = document.getElementById("email").value.trim();
-            const whatsapp = document
-              .getElementById("whatsapp")
-              .value.trim()
-              .replace(/\D/g, ""); 
-              
-            const regId = `reg_${Date.now()}`;
-            
-            try {
-              await setDoc(doc(db, "registrations", regId), {
+          payButton.disabled = true;
+          payButton.textContent = "Processing Payment...";
+          formError.classList.add("hidden");
+          formError.textContent = "";
+
+          const name = document.getElementById("name").value.trim();
+          const email = document.getElementById("email").value.trim();
+          const whatsapp = document
+            .getElementById("whatsapp")
+            .value.trim()
+            .replace(/\D/g, "");
+
+          const regId = `reg_${Date.now()}`;
+
+          try {
+            await setDoc(doc(db, "registrations", regId), {
+              name,
+              email,
+              whatsapp,
+              status: "pending",
+              createdAt: serverTimestamp(),
+            });
+
+            const resp = await fetch("/api/createOrder", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({
                 name,
                 email,
                 whatsapp,
-                status: "pending",
-                createdAt: serverTimestamp(),
-              });
-              
-              const resp = await fetch("/api/createOrder", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({
-                  name,
-                  email,
-                  whatsapp,
-                  amount: 99,
-                  currency: "INR",
-                  registrationId: regId,
-                }),
-              });
-              
-              const data = await resp.json();
-              if (!resp.ok) {
-                throw new Error(data.message || "Failed to create order");
-              }
-                
-              if (data.payment_link) {
-                window.location.href = data.payment_link;
-              } else {
-                throw new Error("Payment link not received. Please try again.");
-              }
+                amount: 99,
+                currency: "INR",
+                registrationId: regId,
+              }),
+            });
 
-            } catch (err) {
-              console.error(err);
-              formError.textContent = err.message || "An unknown error occurred.";
-              formError.classList.remove("hidden");
-              
-              payButton.disabled = false;
-              payButton.textContent = "RESERVE MY SEAT (Pay ₹99)";
+            const data = await resp.json();
+            if (!resp.ok) {
+              throw new Error(data.message || "Failed to create order");
             }
-          });
-      } else {
-          if (!db) {
-            console.error("Firebase is not initialized. Form will not work.");
+
+            // ✅ Wait until Cashfree SDK is loaded before using it
+            if (data.cfData && data.cfData.payment_session_id) {
+              await new Promise((resolve) => {
+                const check = () => {
+                  if (typeof Cashfree !== "undefined") resolve();
+                  else setTimeout(check, 100);
+                };
+                check();
+              });
+
+              // Now safe to use Cashfree
+              const cashfree = Cashfree({mode: "sandbox"}); // change to "production" later
+              cashfree
+                .checkout({
+                  paymentSessionId: data.cfData.payment_session_id,
+                  redirectTarget: "_self",
+                })
+                .then((res) => console.log("Cashfree checkout launched:", res))
+                .catch((err) => {
+                  console.error("Cashfree error:", err);
+                  throw new Error("Unable to start payment. Please try again.");
+                });
+            } else {
+              throw new Error("Payment session ID missing. Please try again.");
+            }
+          } catch (err) {
+            console.error(err);
+            formError.textContent = err.message || "An unknown error occurred.";
+            formError.classList.remove("hidden");
+
+            payButton.disabled = false;
+            payButton.textContent = "RESERVE MY SEAT (Pay ₹99)";
           }
+        });
+      } else {
+        console.error("Firebase or form elements not initialized properly.");
       }
     </script>
   </body>

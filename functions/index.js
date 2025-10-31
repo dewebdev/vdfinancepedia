@@ -1,3 +1,5 @@
+console.log("🔥 Function deployed at:", new Date().toISOString());
+
 const functions = require("firebase-functions");
 const express = require("express");
 const admin = require("firebase-admin");
@@ -48,7 +50,7 @@ function getTransporter() {
   return transporter;
 }
 
-app.post("/createOrder", async (req, res) => {
+app.post("/api/createOrder", async (req, res) => {
   // Check that secrets are set
   if (!CF_APP_ID || !CF_KEY_SECRET || !YOUR_WEBSITE_URL) {
     console.error(
@@ -75,7 +77,7 @@ app.post("/createOrder", async (req, res) => {
       order_currency: currency,
       order_note: `Webinar registration for ${name}`,
       customer_details: {
-        customer_id: registrationId || email,
+        customer_id: registrationId || email.replace(/[^a-zA-Z0-9_-]/g, "_"),
         customer_name: name,
         customer_email: email,
         customer_phone: whatsapp ? `+91${whatsapp.replace(/\\D/g, "")}` : "",
@@ -94,6 +96,15 @@ app.post("/createOrder", async (req, res) => {
       "x-client-secret": CF_KEY_SECRET,
       "x-api-version": "2022-09-01", // This line was missing
     };
+
+    console.log("DEBUG Cashfree Headers:", {
+      CF_APP_ID,
+      CF_KEY_SECRET: CF_KEY_SECRET
+        ? CF_KEY_SECRET.slice(0, 8) + "..."
+        : "MISSING",
+      CF_ENV,
+      CASHFREE_BASE,
+    });
 
     const cfResp = await axios.post(url, orderPayload, {headers});
     const cfData = cfResp.data || {};
@@ -114,7 +125,8 @@ app.post("/createOrder", async (req, res) => {
       {merge: true}
     );
 
-    const payment_link = cfData?.payment_link || null;
+    const payment_link = cfData?.payment_link || cfData?.payments?.url || null;
+
     return res.status(200).json({payment_link, cfData});
   } catch (err) {
     console.error(
@@ -293,5 +305,10 @@ async function sendWhatsApp(docData) {
     console.error("WhatsApp send failed", e?.response?.data || e.message || e);
   }
 }
+
+app.use((req, res) => {
+  console.log("➡️ Received request:", req.method, req.path);
+  res.status(404).json({message: "Route not found", path: req.path});
+});
 
 exports.api = functions.https.onRequest(app);
