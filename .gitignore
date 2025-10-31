@@ -1,0 +1,25 @@
+Node.js dependencies
+
+/node_modules
+/functions/node_modules
+
+Firebase
+
+.firebase/
+database-debug.log
+firestore-debug.log
+storage-debug.log
+.firebase/emulators
+firebase-export-*
+
+Logs
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+OS Files
+
+.DS_Store
+Thumbs.db
